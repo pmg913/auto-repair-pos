@@ -1,432 +1,74 @@
-// JavaScript logic to support 3 bays per time slot and service type with quote, paid/unpaid, and deletion support
-
-const calendarData = {
-  quick: {},
-  major: {}
-};
-
-let uncheckedAppointments = [];
-
-function getCurrentDateKey() {
-  const input = document.getElementById('calendarDate');
-  return input && input.value ? input.value : new Date().toISOString().split('T')[0];
-}
-
-function getSlotKey(serviceType, day, time) {
-  return `${getCurrentDateKey()}_${serviceType}_${day}_${time}`;
-}
-
-function generateTimeSlots() {
-  const calendarTypes = ['quick', 'major'];
-  const timeStart = 8 * 60;
-  const timeEnd = 17 * 60;
-  const interval = 30;
-  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-  uncheckedAppointments = [];
-
-  calendarTypes.forEach(type => {
-    const tbody = document.getElementById(`calendarBody-${type}`);
-    tbody.innerHTML = '';
-
-    for (let t = timeStart; t < timeEnd; t += interval) {
-      const row = document.createElement('tr');
-      const timeStr = `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
-
-      const timeCell = document.createElement('td');
-      timeCell.textContent = timeStr;
-      row.appendChild(timeCell);
-
-      days.forEach(day => {
-        const key = getSlotKey(type, day.toLowerCase(), timeStr);
-        if (!calendarData[type][key]) calendarData[type][key] = [];
-
-        const cell = document.createElement('td');
-
-        const appts = calendarData[type][key];
-        appts.forEach((appt, i) => {
-          const div = document.createElement('div');
-          div.innerHTML = `${appt.name} (${appt.status || 'Scheduled'})` +
-            (appt.paid ? ' 💵' : ' ❌') + '<br>' +
-            (appt.quote ? `Quote: $${appt.quote}` : '');
-          div.setAttribute('data-tooltip', `Phone: ${appt.phone}\nVehicle: ${appt.vehicle}`);
-          div.setAttribute('data-status', appt.status);
-
-          div.onclick = (e) => {
-            e.stopPropagation();
-            const action = prompt("Type: status, quote, paid, or delete", "status");
-            if (action === 'status') {
-              const nextStatus = prompt("Update status: Scheduled, In Progress, Completed", appt.status);
-              if (nextStatus) appt.status = nextStatus;
-            } else if (action === 'quote') {
-  const lineItems = [];
-  let more = true;
-  while (more) {
-    const desc = prompt("Enter item description (or leave blank to finish)");
-    if (!desc) break;
-    const cost = prompt(`Enter cost for '${desc}'`);
-    if (cost && !isNaN(cost)) {
-      lineItems.push({ desc, cost });
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Auto Repair POS</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 20px;
     }
-  }
-  if (lineItems.length > 0) {
-    appt.lineItems = lineItems;
-    appt.quote = lineItems.reduce((sum, item) => sum + parseFloat(item.cost), 0).toFixed(2);
-    printReceipt(appt);
-  }
-}
-} else if (action === 'paid') {
-  appt.paid = confirm("Mark as paid?");
-  if (appt.paid) printReceipt(appt);
-} else if (action === 'delete') {
-              if (confirm("Delete this appointment?")) {
-                calendarData[type][key].splice(i, 1);
-              }
-            }
-            generateTimeSlots();
-
-  // Add Print/Export Buttons
-  const tools = document.getElementById('tools') || document.createElement('div');
-  tools.id = 'tools';
-  tools.innerHTML = `
-    <button onclick="printDayView()">🖨️ Print Day View</button>
-    <button onclick="exportAppointments()">📁 Export CSV</button>
-  `;
-  document.body.prepend(tools);
-
-  // Add reprint buttons for each appointment
-  document.querySelectorAll('div[data-tooltip]').forEach(div => {
-    const reprintBtn = document.createElement('button');
-    reprintBtn.textContent = '🖨️ Reprint Quote';
-    reprintBtn.style.marginLeft = '10px';
-    reprintBtn.onclick = (e) => {
-      e.stopPropagation();
-      const name = div.textContent.split('(')[0].trim();
-      const appt = findAppointmentByName(name);
-      if (appt) printReceipt(appt);
-    };
-    div.appendChild(reprintBtn);
-  });
-            if (customers[phone]) {
-  customers[phone].history.push({
-    date: getCurrentDateKey(),
-    vehicle: vehicle,
-    total: appt.quote || '0.00',
-    status: appt.status || 'Scheduled'
-  });
-}
-saveAppointments();
-          };
-
-          if (appt.status !== 'Completed' || !appt.paid) {
-            uncheckedAppointments.push({ ...appt, day, time: timeStr, service: type });
-          }
-
-          cell.appendChild(div);
-        });
-
-        cell.onclick = () => {
-          if (calendarData[type][key].length >= 3) {
-            alert('All 3 bays are booked for this time.');
-          } else {
-            const name = prompt('Enter client name:');
-            const phone = prompt('Enter phone:');
-            const vehicle = prompt('Enter vehicle:');
-            if (name && phone && vehicle) {
-  const email = prompt('Enter email (optional):');
-  if (!customers[phone]) {
-    customers[phone] = {
-      name: name,
-      phone: phone,
-      email: email,
-      vehicles: [vehicle],
-      history: []
-    };
-  } else {
-    if (!customers[phone].vehicles.includes(vehicle)) {
-      customers[phone].vehicles.push(vehicle);
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
     }
-  }
-              calendarData[type][key].push({ name, phone, vehicle, status: 'Scheduled', paid: false });
-              generateTimeSlots();
-              saveAppointments();
-            }
-          }
-        };
-
-        row.appendChild(cell);
-      });
-      tbody.appendChild(row);
+    td, th {
+      border: 1px solid #ccc;
+      padding: 8px;
+      vertical-align: top;
     }
-  });
-  displayUnchecked();
-}
-
-function displayUnchecked() {
-  const section = document.getElementById('uncheckedList') || document.createElement('div');
-  section.id = 'uncheckedList';
-  section.innerHTML = '<h3>Unfinished Appointments</h3>';
-  uncheckedAppointments.forEach(appt => {
-    const div = document.createElement('div');
-    div.textContent = `${appt.name} (${appt.status}${appt.paid ? ', Paid' : ', Unpaid'}) - ${appt.service} on ${appt.day} at ${appt.time}`;
-    section.appendChild(div);
-  });
-  document.body.appendChild(section);
-}
-
-function saveAppointments() {
-  localStorage.setItem('calendarData', JSON.stringify(calendarData));
-}
-
-function loadAppointments() {
-  const saved = localStorage.getItem('calendarData');
-  if (saved) {
-    Object.assign(calendarData, JSON.parse(saved));
-  }
-}
-
-function changeDate(offset) {
-  const input = document.getElementById('calendarDate');
-  const current = new Date(input.value || new Date());
-  current.setDate(current.getDate() + offset);
-  input.value = current.toISOString().split('T')[0];
-  generateTimeSlots();
-}
-
-function printDayView() {
-  const date = getCurrentDateKey();
-  let output = `Appointments for ${date}
-
-`;
-  Object.keys(calendarData).forEach(type => {
-    output += `=== ${type.toUpperCase()} ===
-`;
-    Object.keys(calendarData[type]).forEach(slot => {
-      if (slot.startsWith(date)) {
-        calendarData[type][slot].forEach(appt => {
-          output += `${appt.name}, Phone: ${appt.phone}, Vehicle: ${appt.vehicle}, Quote: $${appt.quote || 0}, Status: ${appt.status}, Paid: ${appt.paid ? 'Yes' : 'No'}
-`;
-        });
-      }
-    });
-    output += '
-';
-  });
-  const newWindow = window.open('', '', 'width=800,height=600');
-  newWindow.document.write(`<pre>${output}</pre>`);
-  newWindow.print();
-}
-
-function exportAppointments() {
-  const data = [];
-  const date = getCurrentDateKey();
-  Object.keys(calendarData).forEach(type => {
-    Object.keys(calendarData[type]).forEach(slot => {
-      if (slot.startsWith(date)) {
-        calendarData[type][slot].forEach(appt => {
-          data.push({
-            Date: date,
-            TimeSlot: slot.split('_').slice(-1)[0],
-            Type: type,
-            Name: appt.name,
-            Phone: appt.phone,
-            Vehicle: appt.vehicle,
-            Quote: appt.quote || 0,
-            Status: appt.status,
-            Paid: appt.paid ? 'Yes' : 'No'
-          });
-        });
-      }
-    });
-  });
-  let csv = 'Date,TimeSlot,Type,Name,Phone,Vehicle,Quote,Status,Paid
-';
-  data.forEach(row => {
-    csv += Object.values(row).join(',') + '
-';
-  });
-  const blob = new Blob([csv], { type: 'text/csv' });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = `appointments_${date}.csv`;
-  link.click();
-}
-
-function printReceipt(appt) {
-  const date = new Date().toLocaleDateString();
-  let lineItemsHtml = '';
-  if (appt.lineItems && Array.isArray(appt.lineItems)) {
-    lineItemsHtml = '<table border="1" cellpadding="5" cellspacing="0" width="100%"><tr><th>Description</th><th>Cost</th></tr>';
-    appt.lineItems.forEach(item => {
-      lineItemsHtml += `<tr><td>${item.desc}</td><td>$${parseFloat(item.cost).toFixed(2)}</td></tr>`;
-    });
-    const total = appt.lineItems.reduce((sum, item) => sum + parseFloat(item.cost), 0);
-    lineItemsHtml += `<tr><td><strong>Total</strong></td><td><strong>$${total.toFixed(2)}</strong></td></tr>`;
-    lineItemsHtml += '</table>';
-  }
-
-  const html = `
-    <html>
-    <head><title>Quote Receipt</title></head>
-    <body style="font-family: sans-serif; padding: 20px;">
-      <h1>Auto Repair Quote Receipt</h1>
-      <p><strong>Date:</strong> ${date}</p>
-      <p><strong>Customer Name:</strong> ${appt.name}</p>
-      <p><strong>Phone:</strong> ${appt.phone}</p>
-      <p><strong>Vehicle:</strong> ${appt.vehicle}</p>
-      <p><strong>Status:</strong> ${appt.status}</p>
-      <p><strong>Paid:</strong> ${appt.paid ? 'Yes' : 'No'}</p>
-      <hr>
-      ${lineItemsHtml || '<p><em>No quote items provided.</em></p>'}
-      <hr>
-      <p>Thank you for choosing our service!</p>
-    </body>
-    </html>
-  `;
-  const win = window.open('', '', 'width=800,height=600');
-  win.document.write(html);
-  win.document.close();
-  win.focus();
-  win.print();
-  win.close();
-}
-
-function findAppointmentByName(name) {
-  for (const type of ['quick', 'major']) {
-    for (const key in calendarData[type]) {
-      const match = calendarData[type][key].find(appt => appt.name === name);
-      if (match) return match;
+    td > div {
+      margin-bottom: 4px;
+      padding: 4px;
+      background: #f3f3f3;
+      cursor: pointer;
     }
-  }
-  return null;
-}
-
-const customers = {};
-
-function sendConfirmationEmail(name, email, date, time, vehicle) {
-  emailjs.send("service_xxx", "template_xxx", {
-    to_name: name,
-    to_email: email,
-    message: `Hi ${name}, your ${vehicle} is scheduled for service on ${date} at ${time}.`
-  }).then(function(response) {
-    console.log("Email sent!", response);
-  }, function(error) {
-    console.error("Failed to send email.", error);
-  });
-}
-
-function showLoginForm() {
-  const container = document.createElement('div');
-  container.id = 'loginForm';
-  container.innerHTML = `
-    <h2>Customer Login</h2>
-    <input type="text" id="loginPhone" placeholder="Enter phone number" />
-    <button onclick="loginCustomer()">Login</button>
-  `;
-  document.body.prepend(container);
-}
-
-function loginCustomer() {
-  const phone = document.getElementById('loginPhone').value.trim();
-  if (!phone) return alert("Please enter a phone number");
-  const profile = customers[phone];
-  if (!profile) return alert("Customer not found. Please book an appointment first.");
-  showCustomerDashboard(phone);
-}
-
-function showCustomerDashboard(phone) {
-  const customer = customers[phone];
-  const container = document.getElementById('customerDashboard') || document.createElement('div');
-  container.id = 'customerDashboard';
-  container.innerHTML = `
-    <h2>Welcome, ${customer.name}</h2>
-    <h3>Your Vehicles:</h3>
-    <ul>
-      ${customer.vehicles.map(v => `<li>${v}</li>`).join('')}
-    </ul>
-    <h3>Quote History:</h3>
-    <ul>
-      ${customer.history.map(h => `<li>${h.date} - $${h.total} - ${h.status}</li>`).join('')}
-    </ul>
-    <button onclick="bookOilChange('${phone}')">Book Oil Change</button>
-  `;
-  document.body.appendChild(container);
-}
-
-function bookOilChange(phone) {
-  const customer = customers[phone];
-  const vehicle = prompt("Which vehicle is this for?
-" + customer.vehicles.join('
-'));
-  if (!vehicle || !customer.vehicles.includes(vehicle)) return alert("Invalid vehicle.");
-
-  const type = 'quick';
-  const date = getCurrentDateKey();
-  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-  const selectedDay = prompt("Select a day:
-" + days.join('
-'));
-  if (!selectedDay || !days.includes(selectedDay)) return alert("Invalid day.");
-
-  const availableSlots = [];
-  for (let hour = 8; hour < 17; hour++) {
-    for (let min = 0; min < 60; min += 30) {
-      const timeStr = `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
-      const key = `${date}_${type}_${selectedDay.toLowerCase()}_${timeStr}`;
-      if (!calendarData[type][key] || calendarData[type][key].length < 3) {
-        availableSlots.push(timeStr);
-      }
+    [data-status="Completed"] {
+      background: #d4edda;
     }
-  }
+    [data-status="In Progress"] {
+      background: #fff3cd;
+    }
+    [data-status="Scheduled"] {
+      background: #f8d7da;
+    }
+  </style>
+</head>
+<body>
+  <h1>Auto Repair POS System</h1>
 
-  if (availableSlots.length === 0) return alert("No available time slots for selected day.");
+  <label for="calendarDate">Date:</label>
+  <input type="date" id="calendarDate" onchange="generateTimeSlots()" />
 
-  const selectedTime = prompt("Available times:
-" + availableSlots.join(', '));
-  if (!availableSlots.includes(selectedTime)) return alert("Invalid or unavailable time selected.");
+  <div id="tools"></div>
 
-  const key = getSlotKey(type, selectedDay.toLowerCase(), selectedTime);
-  if (!calendarData[type][key]) calendarData[type][key] = [];
+  <h2>Quick Service Bays (Oil Change / Tire Rotation)</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th>
+      </tr>
+    </thead>
+    <tbody id="calendarBody-quick"></tbody>
+  </table>
 
-  calendarData[type][key].push({
-    name: customer.name,
-    phone: customer.phone,
-    vehicle: vehicle,
-    status: 'Scheduled',
-    paid: false
-  });
+  <h2>Major Repair Bays (Alignments / Complex Repairs)</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th>
+      </tr>
+    </thead>
+    <tbody id="calendarBody-major"></tbody>
+  </table>
 
-  customer.history.push({
-    date: date,
-    vehicle: vehicle,
-    total: '0.00',
-    status: 'Scheduled'
-  });
+  <div id="uncheckedList"></div>
 
-  alert("Oil change booked for " + selectedDay + " at " + selectedTime);
-if (customer.email) sendConfirmationEmail(customer.name, customer.email, date, selectedTime, vehicle);
-  generateTimeSlots();
-  saveAppointments();
-}
-
-  calendarData[type][key].push({
-    name: customer.name,
-    phone: customer.phone,
-    vehicle: vehicle,
-    status: 'Scheduled',
-    paid: false
-  });
-
-  customer.history.push({
-    date: getCurrentDateKey(),
-    vehicle: vehicle,
-    total: '0.00',
-    status: 'Scheduled'
-  });
-
-  alert("Oil change booked for " + selectedDay + " at " + selectedTime);
-  generateTimeSlots();
-  saveAppointments();
-}
-
-window.onload = () => {
-  showLoginForm();
+  <script>
+    // INSERT YOUR FULL JAVASCRIPT HERE
+  </script>
+</body>
+</html>
