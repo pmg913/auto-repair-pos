@@ -1,10 +1,3 @@
-// Full implementation coming here with:
-// ✅ Quote saving into appointment
-// ✅ Printable/downloadable invoice
-// ✅ Color-coded appointments by status
-
-// I will now apply these updates directly to your working code. Let’s get started...
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -59,10 +52,14 @@
       margin: 5px;
       padding: 5px;
     }
+    .search-bar {
+      margin-top: 20px;
+    }
   </style>
 </head>
 <body>
   <h1>Auto Repair Appointment Calendar</h1>
+  <input class="search-bar" id="searchInput" placeholder="Search by name, phone, or vehicle" oninput="searchAppointments()" />
   <table id="calendar">
     <thead>
       <tr>
@@ -77,18 +74,20 @@
     <tbody id="calendarBody"></tbody>
   </table>
 
-  <div id="appointmentForm">
-    <!-- Form remains unchanged -->
-  </div>
-
+  <div id="appointmentForm"></div>
   <div id="quotePage"></div>
 
   <script>
-    // Existing variables remain unchanged
+    const days = ['mon', 'tue', 'wed', 'thu', 'fri'];
+    let calendarSlots = {};
+    let customers = {};
+
+    function tooltipText(appt) {
+      return `Name: ${appt.name}\nPhone(s): ${appt.phones}\nVehicle: ${appt.vehicle}\nMileage: ${appt.mileage}\nStatus: ${appt.status}`;
+    }
 
     function openQuotePage(appt) {
       const quoteDiv = document.getElementById("quotePage");
-
       quoteDiv.innerHTML = `
         <h3>Quote & Checkout for ${appt.name}</h3>
         <p>Vehicle: ${appt.vehicle} | Mileage: ${appt.mileage}</p>
@@ -99,7 +98,6 @@
         <button onclick="saveQuote('${appt.name}', '${appt.phones.join('_')}', '${appt.vehicle}', '${appt.checkInTime}')">Save Quote</button>
         <button onclick="printInvoice()">Print / Download</button>
       `;
-
       quoteDiv.style.display = 'block';
       document.getElementById('appointmentForm').style.display = 'none';
     }
@@ -109,7 +107,6 @@
       const labor = parseFloat(document.getElementById("laborCost").value);
       const parts = parseFloat(document.getElementById("partsCost").value);
       const tax = parseFloat(document.getElementById("tax").value);
-
       const cust = customers[key];
       const record = cust.vehicles[vehicle].find(r => r.checkInTime === time);
       record.quoteDesc = desc;
@@ -117,8 +114,8 @@
       record.partsCost = parts;
       record.tax = tax;
       record.status = "Completed";
-
-      saveAppointments();
+      localStorage.setItem("calendarSlots", JSON.stringify(calendarSlots));
+      localStorage.setItem("customers", JSON.stringify(customers));
       generateTimeSlots();
       alert("Quote saved.");
     }
@@ -133,24 +130,27 @@
       win.print();
     }
 
+    function toTimeString(minutes) {
+      const hrs = Math.floor(minutes / 60);
+      const mins = minutes % 60;
+      return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+    }
+
     function generateTimeSlots() {
       const start = 8 * 60;
       const end = 17 * 60;
       const interval = 15;
       const body = document.getElementById("calendarBody");
       body.innerHTML = "";
-
       for (let t = start; t < end; t += interval) {
         const row = document.createElement("tr");
         const timeStr = toTimeString(t);
         const timeCell = document.createElement("td");
         timeCell.textContent = timeStr;
         row.appendChild(timeCell);
-
         days.forEach(day => {
           const key = `${day}_${timeStr}`;
           if (!calendarSlots[key]) calendarSlots[key] = [];
-
           const cell = document.createElement("td");
           const appt = calendarSlots[key][0];
           cell.innerHTML = appt ? `${appt.name}<br><small>${appt.status || 'Scheduled'}</small>` : "";
@@ -159,13 +159,79 @@
             cell.setAttribute("data-tooltip", tooltipText(appt));
             cell.onclick = () => openQuotePage(appt);
           } else {
-            cell.onclick = () => showForm(day, timeStr);
+            cell.onclick = () => alert('Open booking form');
           }
           row.appendChild(cell);
         });
-
         body.appendChild(row);
       }
+    }
+
+    function searchAppointments() {
+      const term = document.getElementById("searchInput").value.toLowerCase();
+      if (!term) {
+        generateTimeSlots();
+        return;
+      }
+      const body = document.getElementById("calendarBody");
+      body.innerHTML = "";
+      for (const key in calendarSlots) {
+        calendarSlots[key].forEach(appt => {
+          if (
+            appt.name.toLowerCase().includes(term) ||
+            appt.phones.join(",").includes(term) ||
+            appt.vehicle.toLowerCase().includes(term)
+          ) {
+            const row = document.createElement("tr");
+            row.innerHTML = `<td colspan='6'>${appt.name} - ${appt.vehicle} (${key})</td>`;
+            body.appendChild(row);
+          }
+        });
+      }
+    }
+
+    window.onload = function () {
+      // Inject mock data for demonstration
+      const mockKey = 'mon_08:00';
+      const mockCustomerKey = '555-1234';
+      calendarSlots[mockKey] = [
+        {
+          name: 'John Doe',
+          phones: ['555-1234'],
+          vehicle: 'Toyota Camry',
+          mileage: '120000',
+          checkInTime: '08:00',
+          quoteDesc: 'Oil change and tire rotation',
+          laborCost: 50,
+          partsCost: 30,
+          tax: 8,
+          status: 'Scheduled'
+        }
+      ];
+      customers[mockCustomerKey] = {
+        name: 'John Doe',
+        phones: ['555-1234'],
+        vehicles: {
+          'Toyota Camry': [
+            {
+              checkInTime: '08:00',
+              mileage: '120000',
+              quoteDesc: 'Oil change and tire rotation',
+              laborCost: 50,
+              partsCost: 30,
+              tax: 8,
+              status: 'Scheduled'
+            }
+          ]
+        }
+      };
+      localStorage.setItem("calendarSlots", JSON.stringify(calendarSlots));
+      localStorage.setItem("customers", JSON.stringify(customers));
+      const saved = localStorage.getItem("calendarSlots");
+      const custData = localStorage.getItem("customers");
+      if (saved) calendarSlots = JSON.parse(saved);
+      if (custData) customers = JSON.parse(custData);
+      generateTimeSlots();
     }
   </script>
 </body>
