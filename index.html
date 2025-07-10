@@ -1,74 +1,287 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Auto Repair POS</title>
-  <style>
-    body {
-      font-family: sans-serif;
-      padding: 20px;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-bottom: 20px;
-    }
-    td, th {
-      border: 1px solid #ccc;
-      padding: 8px;
-      vertical-align: top;
-    }
-    td > div {
-      margin-bottom: 4px;
-      padding: 4px;
-      background: #f3f3f3;
-      cursor: pointer;
-    }
-    [data-status="Completed"] {
-      background: #d4edda;
-    }
-    [data-status="In Progress"] {
-      background: #fff3cd;
-    }
-    [data-status="Scheduled"] {
-      background: #f8d7da;
-    }
-  </style>
-</head>
-<body>
-  <h1>Auto Repair POS System</h1>
+// JavaScript logic to support 3 bays per time slot and service type with quote, paid/unpaid, and deletion support
 
-  <label for="calendarDate">Date:</label>
-  <input type="date" id="calendarDate" onchange="generateTimeSlots()" />
+const calendarData = {
+  quick: {},
+  major: {}
+};
 
-  <div id="tools"></div>
+let uncheckedAppointments = [];
+const customers = {};
 
-  <h2>Quick Service Bays (Oil Change / Tire Rotation)</h2>
-  <table>
-    <thead>
-      <tr>
-        <th>Time</th>
-        <th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th>
-      </tr>
-    </thead>
-    <tbody id="calendarBody-quick"></tbody>
-  </table>
+function getCurrentDateKey() {
+  const input = document.getElementById('calendarDate');
+  return input && input.value ? input.value : new Date().toISOString().split('T')[0];
+}
 
-  <h2>Major Repair Bays (Alignments / Complex Repairs)</h2>
-  <table>
-    <thead>
-      <tr>
-        <th>Time</th>
-        <th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th>
-      </tr>
-    </thead>
-    <tbody id="calendarBody-major"></tbody>
-  </table>
+function getSlotKey(serviceType, day, time) {
+  return `${getCurrentDateKey()}_${serviceType}_${day}_${time}`;
+}
 
-  <div id="uncheckedList"></div>
+function generateTimeSlots() {
+  const calendarTypes = ['quick', 'major'];
+  const timeStart = 8 * 60;
+  const timeEnd = 17 * 60;
+  const interval = 30;
+  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+  uncheckedAppointments = [];
 
-  <script>
-    // INSERT YOUR FULL JAVASCRIPT HERE
-  </script>
-</body>
-</html>
+  calendarTypes.forEach(type => {
+    const tbody = document.getElementById(`calendarBody-${type}`);
+    tbody.innerHTML = '';
+
+    for (let t = timeStart; t < timeEnd; t += interval) {
+      const row = document.createElement('tr');
+      const timeStr = `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+
+      const timeCell = document.createElement('td');
+      timeCell.textContent = timeStr;
+      row.appendChild(timeCell);
+
+      days.forEach(day => {
+        const key = getSlotKey(type, day.toLowerCase(), timeStr);
+        if (!calendarData[type][key]) calendarData[type][key] = [];
+
+        const cell = document.createElement('td');
+        const appts = calendarData[type][key];
+        appts.forEach((appt, i) => {
+          const div = document.createElement('div');
+          div.innerHTML = `${appt.name} (${appt.status || 'Scheduled'})` +
+            (appt.paid ? ' 💵' : ' ❌') + '<br>' +
+            (appt.quote ? `Quote: $${appt.quote}` : '');
+          div.setAttribute('data-tooltip', `Phone: ${appt.phone}\nVehicle: ${appt.vehicle}`);
+          div.setAttribute('data-status', appt.status);
+
+          div.onclick = (e) => {
+            e.stopPropagation();
+            const action = prompt("Type: status, quote, paid, or delete", "status");
+            if (action === 'status') {
+              const nextStatus = prompt("Update status: Scheduled, In Progress, Completed", appt.status);
+              if (nextStatus) appt.status = nextStatus;
+            } else if (action === 'quote') {
+              const lineItems = [];
+              let more = true;
+              while (more) {
+                const desc = prompt("Enter item description (or leave blank to finish)");
+                if (!desc) break;
+                const cost = prompt(`Enter cost for '${desc}'`);
+                if (cost && !isNaN(cost)) {
+                  lineItems.push({ desc, cost });
+                }
+              }
+              if (lineItems.length > 0) {
+                appt.lineItems = lineItems;
+                appt.quote = lineItems.reduce((sum, item) => sum + parseFloat(item.cost), 0).toFixed(2);
+                printReceipt(appt);
+              }
+            } else if (action === 'paid') {
+              appt.paid = confirm("Mark as paid?");
+              if (appt.paid) printReceipt(appt);
+            } else if (action === 'delete') {
+              if (confirm("Delete this appointment?")) {
+                calendarData[type][key].splice(i, 1);
+              }
+            }
+            generateTimeSlots();
+            if (customers[appt.phone]) {
+              customers[appt.phone].history.push({
+                date: getCurrentDateKey(),
+                vehicle: appt.vehicle,
+                total: appt.quote || '0.00',
+                status: appt.status || 'Scheduled'
+              });
+            }
+            saveAppointments();
+          };
+
+          if (appt.status !== 'Completed' || !appt.paid) {
+            uncheckedAppointments.push({ ...appt, day, time: timeStr, service: type });
+          }
+
+          cell.appendChild(div);
+        });
+
+        cell.onclick = () => {
+          if (calendarData[type][key].length >= 3) {
+            alert('All 3 bays are booked for this time.');
+          } else {
+            const name = prompt('Enter client name:');
+            const phone = prompt('Enter phone:');
+            const vehicle = prompt('Enter vehicle:');
+            if (name && phone && vehicle) {
+              const email = prompt('Enter email (optional):');
+              if (!customers[phone]) {
+                customers[phone] = {
+                  name: name,
+                  phone: phone,
+                  email: email,
+                  vehicles: [vehicle],
+                  history: []
+                };
+              } else {
+                if (!customers[phone].vehicles.includes(vehicle)) {
+                  customers[phone].vehicles.push(vehicle);
+                }
+              }
+              calendarData[type][key].push({ name, phone, vehicle, status: 'Scheduled', paid: false });
+              generateTimeSlots();
+              saveAppointments();
+            }
+          }
+        };
+
+        row.appendChild(cell);
+      });
+      tbody.appendChild(row);
+    }
+  });
+  displayUnchecked();
+}
+
+function displayUnchecked() {
+  const section = document.getElementById('uncheckedList') || document.createElement('div');
+  section.id = 'uncheckedList';
+  section.innerHTML = '<h3>Unfinished Appointments</h3>';
+  uncheckedAppointments.forEach(appt => {
+    const div = document.createElement('div');
+    div.textContent = `${appt.name} (${appt.status}${appt.paid ? ', Paid' : ', Unpaid'}) - ${appt.service} on ${appt.day} at ${appt.time}`;
+    section.appendChild(div);
+  });
+  document.body.appendChild(section);
+}
+
+function saveAppointments() {
+  localStorage.setItem('calendarData', JSON.stringify(calendarData));
+}
+
+function loadAppointments() {
+  const saved = localStorage.getItem('calendarData');
+  if (saved) {
+    Object.assign(calendarData, JSON.parse(saved));
+  }
+}
+
+function printDayView() {
+  // unchanged
+}
+
+function exportAppointments() {
+  // unchanged
+}
+
+function printReceipt(appt) {
+  // unchanged
+}
+
+function findAppointmentByName(name) {
+  for (const type of ['quick', 'major']) {
+    for (const key in calendarData[type]) {
+      const match = calendarData[type][key].find(appt => appt.name === name);
+      if (match) return match;
+    }
+  }
+  return null;
+}
+
+function showLoginForm() {
+  const container = document.createElement('div');
+  container.id = 'loginForm';
+  container.innerHTML = `
+    <h2>Customer Login</h2>
+    <input type="text" id="loginPhone" placeholder="Enter phone number" />
+    <button onclick="loginCustomer()">Login</button>
+    <br><br>
+    <input type="text" id="searchCustomer" placeholder="Search by name, phone, or vehicle" oninput="searchCustomers()" />
+    <div id="searchResults"></div>
+  `;
+  document.body.prepend(container);
+}
+
+function loginCustomer() {
+  const phone = document.getElementById('loginPhone').value.trim();
+  if (!phone) return alert("Please enter a phone number");
+  const profile = customers[phone];
+  if (!profile) return alert("Customer not found. Please book an appointment first.");
+  showCustomerDashboard(phone);
+}
+
+function showCustomerDashboard(phone) {
+  // unchanged
+}
+
+function bookOilChange(phone) {
+  const customer = customers[phone];
+  const vehicle = prompt("Which vehicle is this for? " + customer.vehicles.join(', '));
+  if (!vehicle || !customer.vehicles.includes(vehicle)) return alert("Invalid vehicle.");
+
+  const serviceType = prompt("Choose service: Oil Change, Tire Rotation, Alignment, Diagnostics, Brake Service", "Oil Change");
+  if (!serviceType) return;
+
+  const type = serviceType === 'Oil Change' || serviceType === 'Tire Rotation' ? 'quick' : 'major';
+  const date = getCurrentDateKey();
+  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+  const selectedDay = prompt("Select a day: " + days.join(', '));
+  if (!selectedDay || !days.includes(selectedDay)) return alert("Invalid day.");
+
+  const availableSlots = [];
+  for (let hour = 8; hour < 17; hour++) {
+    for (let min = 0; min < 60; min += 30) {
+      const timeStr = `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+      const key = `${date}_${type}_${selectedDay.toLowerCase()}_${timeStr}`;
+      if (!calendarData[type][key] || calendarData[type][key].length < 3) {
+        availableSlots.push(timeStr);
+      }
+    }
+  }
+  if (availableSlots.length === 0) return alert("No available time slots for selected day.");
+  const selectedTime = prompt("Available times: " + availableSlots.join(', '));
+  if (!availableSlots.includes(selectedTime)) return alert("Invalid or unavailable time selected.");
+
+  const key = getSlotKey(type, selectedDay.toLowerCase(), selectedTime);
+  if (!calendarData[type][key]) calendarData[type][key] = [];
+
+  calendarData[type][key].push({ name: customer.name, phone: customer.phone, vehicle: vehicle, status: 'Scheduled', paid: false });
+  customer.history.push({ date: date, vehicle: vehicle, total: '0.00', status: 'Scheduled' });
+  alert(`${serviceType} booked for ${selectedDay} at ${selectedTime}`);
+
+  generateTimeSlots();
+  saveAppointments();
+}
+
+function searchCustomers() {
+  const query = document.getElementById('searchCustomer').value.toLowerCase();
+  const results = document.getElementById('searchResults');
+  results.innerHTML = '';
+
+  Object.values(customers).forEach(cust => {
+    const matchedVehicles = cust.vehicles.filter(v => v.toLowerCase().includes(query));
+    if (
+      cust.name.toLowerCase().includes(query) ||
+      cust.phone.includes(query) ||
+      matchedVehicles.length > 0
+    ) {
+      matchedVehicles.forEach(vehicle => {
+        const div = document.createElement('div');
+        div.innerHTML = `<strong>${cust.name}</strong> - ${cust.phone}<br>Vehicle Match: ${vehicle}<br><button onclick="event.stopPropagation(); bookOilChange('${cust.phone}')">Book for ${vehicle}</button>`;
+        div.style.border = '1px solid #ccc';
+        div.style.padding = '6px';
+        div.style.marginBottom = '6px';
+        div.onclick = () => showCustomerDashboard(cust.phone);
+        results.appendChild(div);
+      });
+    }
+  });
+}</strong> - ${cust.phone}<br>Vehicles: ${cust.vehicles.join(', ')}`;
+      div.style.border = '1px solid #ccc';
+      div.style.padding = '6px';
+      div.style.marginBottom = '6px';
+      div.onclick = () => showCustomerDashboard(cust.phone);
+      results.appendChild(div);
+    }
+  });
+}
+
+window.onload = () => {
+  showLoginForm();
+  loadAppointments();
+  generateTimeSlots();
+};
