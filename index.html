@@ -1,238 +1,128 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Auto Repair POS - Appointment Calendar</title>
-  <style>
-    body {
-      font-family: sans-serif;
-      padding: 20px;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 20px;
-    }
-    th, td {
-      border: 1px solid #ccc;
-      padding: 10px;
-      text-align: center;
-      vertical-align: top;
-      position: relative;
-    }
-    td[data-status='Scheduled'] {
-      background-color: #fff9c4;
-    }
-    td[data-status='In Progress'] {
-      background-color: #bbdefb;
-    }
-    td[data-status='Completed'] {
-      background-color: #c8e6c9;
-    }
-    td:hover::after {
-      content: attr(data-tooltip);
-      position: absolute;
-      bottom: 100%;
-      left: 50%;
-      transform: translateX(-50%);
-      background: #333;
-      color: #fff;
-      padding: 5px;
-      border-radius: 4px;
-      white-space: pre-wrap;
-      font-size: 12px;
-      z-index: 10;
-    }
-    #appointmentForm, #quotePage {
-      display: none;
-      margin-top: 20px;
-    }
-    input, select, button, textarea {
-      margin: 5px;
-      padding: 5px;
-    }
-    .search-bar {
-      margin-top: 20px;
-    }
-  </style>
-</head>
-<body>
-  <h1>Auto Repair Appointment Calendar</h1>
-  <input class="search-bar" id="searchInput" placeholder="Search by name, phone, or vehicle" oninput="searchAppointments()" />
-  <table id="calendar">
-    <thead>
-      <tr>
-        <th>Time</th>
-        <th>Monday</th>
-        <th>Tuesday</th>
-        <th>Wednesday</th>
-        <th>Thursday</th>
-        <th>Friday</th>
-      </tr>
-    </thead>
-    <tbody id="calendarBody"></tbody>
-  </table>
+// JavaScript logic to support 3 bays per time slot and service type
 
-  <div id="appointmentForm"></div>
-  <div id="quotePage"></div>
+const calendarData = {
+  quick: {},
+  major: {}
+};
 
-  <script>
-    const days = ['mon', 'tue', 'wed', 'thu', 'fri'];
-    let calendarSlots = {};
-    let customers = {};
+let uncheckedAppointments = [];
 
-    function tooltipText(appt) {
-      return `Name: ${appt.name}\nPhone(s): ${appt.phones}\nVehicle: ${appt.vehicle}\nMileage: ${appt.mileage}\nStatus: ${appt.status}`;
-    }
+function getCurrentDateKey() {
+  const input = document.getElementById('calendarDate');
+  return input && input.value ? input.value : new Date().toISOString().split('T')[0];
+}
 
-    function openQuotePage(appt) {
-      const quoteDiv = document.getElementById("quotePage");
-      quoteDiv.innerHTML = `
-        <h3>Quote & Checkout for ${appt.name}</h3>
-        <p>Vehicle: ${appt.vehicle} | Mileage: ${appt.mileage}</p>
-        <textarea id="quoteDesc" placeholder="Describe services/parts...">${appt.quoteDesc || ''}</textarea><br>
-        <input type="number" id="laborCost" placeholder="Labor Cost" value="${appt.laborCost || ''}" />
-        <input type="number" id="partsCost" placeholder="Parts Cost" value="${appt.partsCost || ''}" />
-        <input type="number" id="tax" placeholder="Tax" value="${appt.tax || ''}" />
-        <button onclick="saveQuote('${appt.name}', '${appt.phones.join('_')}', '${appt.vehicle}', '${appt.checkInTime}')">Save Quote</button>
-        <button onclick="printInvoice()">Print / Download</button>
-      `;
-      quoteDiv.style.display = 'block';
-      document.getElementById('appointmentForm').style.display = 'none';
-    }
+function getSlotKey(serviceType, day, time) {
+  return `${getCurrentDateKey()}_${serviceType}_${day}_${time}`;
+}
 
-    function saveQuote(name, key, vehicle, time) {
-      const desc = document.getElementById("quoteDesc").value;
-      const labor = parseFloat(document.getElementById("laborCost").value);
-      const parts = parseFloat(document.getElementById("partsCost").value);
-      const tax = parseFloat(document.getElementById("tax").value);
-      const cust = customers[key];
-      const record = cust.vehicles[vehicle].find(r => r.checkInTime === time);
-      record.quoteDesc = desc;
-      record.laborCost = labor;
-      record.partsCost = parts;
-      record.tax = tax;
-      record.status = "Completed";
-      localStorage.setItem("calendarSlots", JSON.stringify(calendarSlots));
-      localStorage.setItem("customers", JSON.stringify(customers));
-      generateTimeSlots();
-      alert("Quote saved.");
-    }
+function generateTimeSlots() {
+  const calendarTypes = ['quick', 'major'];
+  const timeStart = 8 * 60;
+  const timeEnd = 17 * 60;
+  const interval = 15;
+  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+  uncheckedAppointments = [];
 
-    function printInvoice() {
-      const content = document.getElementById("quotePage").innerHTML;
-      const win = window.open("", "Print", "width=800,height=600");
-      win.document.write('<html><head><title>Invoice</title></head><body>');
-      win.document.write(content);
-      win.document.write('</body></html>');
-      win.document.close();
-      win.print();
-    }
+  calendarTypes.forEach(type => {
+    const tbody = document.getElementById(`calendarBody-${type}`);
+    tbody.innerHTML = '';
 
-    function toTimeString(minutes) {
-      const hrs = Math.floor(minutes / 60);
-      const mins = minutes % 60;
-      return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
-    }
+    for (let t = timeStart; t < timeEnd; t += interval) {
+      const row = document.createElement('tr');
+      const timeStr = `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
 
-    function generateTimeSlots() {
-      const start = 8 * 60;
-      const end = 17 * 60;
-      const interval = 15;
-      const body = document.getElementById("calendarBody");
-      body.innerHTML = "";
-      for (let t = start; t < end; t += interval) {
-        const row = document.createElement("tr");
-        const timeStr = toTimeString(t);
-        const timeCell = document.createElement("td");
-        timeCell.textContent = timeStr;
-        row.appendChild(timeCell);
-        days.forEach(day => {
-          const key = `${day}_${timeStr}`;
-          if (!calendarSlots[key]) calendarSlots[key] = [];
-          const cell = document.createElement("td");
-          const appt = calendarSlots[key][0];
-          cell.innerHTML = appt ? `${appt.name}<br><small>${appt.status || 'Scheduled'}</small>` : "";
-          if (appt) {
-            cell.setAttribute("data-status", appt.status);
-            cell.setAttribute("data-tooltip", tooltipText(appt));
-            cell.onclick = () => openQuotePage(appt);
-          } else {
-            cell.onclick = () => alert('Open booking form');
-          }
-          row.appendChild(cell);
-        });
-        body.appendChild(row);
-      }
-    }
+      const timeCell = document.createElement('td');
+      timeCell.textContent = timeStr;
+      row.appendChild(timeCell);
 
-    function searchAppointments() {
-      const term = document.getElementById("searchInput").value.toLowerCase();
-      if (!term) {
-        generateTimeSlots();
-        return;
-      }
-      const body = document.getElementById("calendarBody");
-      body.innerHTML = "";
-      for (const key in calendarSlots) {
-        calendarSlots[key].forEach(appt => {
-          if (
-            appt.name.toLowerCase().includes(term) ||
-            appt.phones.join(",").includes(term) ||
-            appt.vehicle.toLowerCase().includes(term)
-          ) {
-            const row = document.createElement("tr");
-            row.innerHTML = `<td colspan='6'>${appt.name} - ${appt.vehicle} (${key})</td>`;
-            body.appendChild(row);
-          }
-        });
-      }
-    }
+      days.forEach(day => {
+        const key = getSlotKey(type, day.toLowerCase(), timeStr);
+        if (!calendarData[type][key]) calendarData[type][key] = [];
 
-    window.onload = function () {
-      // Inject mock data for demonstration
-      const mockKey = 'mon_08:00';
-      const mockCustomerKey = '555-1234';
-      calendarSlots[mockKey] = [
-        {
-          name: 'John Doe',
-          phones: ['555-1234'],
-          vehicle: 'Toyota Camry',
-          mileage: '120000',
-          checkInTime: '08:00',
-          quoteDesc: 'Oil change and tire rotation',
-          laborCost: 50,
-          partsCost: 30,
-          tax: 8,
-          status: 'Scheduled'
-        }
-      ];
-      customers[mockCustomerKey] = {
-        name: 'John Doe',
-        phones: ['555-1234'],
-        vehicles: {
-          'Toyota Camry': [
-            {
-              checkInTime: '08:00',
-              mileage: '120000',
-              quoteDesc: 'Oil change and tire rotation',
-              laborCost: 50,
-              partsCost: 30,
-              tax: 8,
-              status: 'Scheduled'
+        const cell = document.createElement('td');
+
+        const appts = calendarData[type][key];
+        appts.forEach((appt, i) => {
+          const div = document.createElement('div');
+          div.textContent = `${appt.name} (${appt.status || 'Scheduled'})`;
+          div.setAttribute('data-tooltip', `Phone: ${appt.phone}\nVehicle: ${appt.vehicle}`);
+          div.setAttribute('data-status', appt.status);
+
+          div.onclick = (e) => {
+            e.stopPropagation();
+            const nextStatus = prompt("Update status: Scheduled, In Progress, Completed", appt.status);
+            if (nextStatus) {
+              appt.status = nextStatus;
+              generateTimeSlots();
+              saveAppointments();
             }
-          ]
-        }
-      };
-      localStorage.setItem("calendarSlots", JSON.stringify(calendarSlots));
-      localStorage.setItem("customers", JSON.stringify(customers));
-      const saved = localStorage.getItem("calendarSlots");
-      const custData = localStorage.getItem("customers");
-      if (saved) calendarSlots = JSON.parse(saved);
-      if (custData) customers = JSON.parse(custData);
-      generateTimeSlots();
+          };
+
+          if (appt.status !== 'Completed') {
+            uncheckedAppointments.push({ ...appt, day, time: timeStr, service: type });
+          }
+
+          cell.appendChild(div);
+        });
+
+        cell.onclick = () => {
+          if (calendarData[type][key].length >= 3) {
+            alert('All 3 bays are booked for this time.');
+          } else {
+            const name = prompt('Enter client name:');
+            const phone = prompt('Enter phone:');
+            const vehicle = prompt('Enter vehicle:');
+            if (name && phone && vehicle) {
+              calendarData[type][key].push({ name, phone, vehicle, status: 'Scheduled' });
+              generateTimeSlots();
+              saveAppointments();
+            }
+          }
+        };
+
+        row.appendChild(cell);
+      });
+      tbody.appendChild(row);
     }
-  </script>
-</body>
-</html>
+  });
+  displayUnchecked();
+}
+
+function displayUnchecked() {
+  const section = document.getElementById('uncheckedList') || document.createElement('div');
+  section.id = 'uncheckedList';
+  section.innerHTML = '<h3>Unfinished Appointments</h3>';
+  uncheckedAppointments.forEach(appt => {
+    const div = document.createElement('div');
+    div.textContent = `${appt.name} (${appt.status}) - ${appt.service} on ${appt.day} at ${appt.time}`;
+    section.appendChild(div);
+  });
+  document.body.appendChild(section);
+}
+
+function saveAppointments() {
+  localStorage.setItem('calendarData', JSON.stringify(calendarData));
+}
+
+function loadAppointments() {
+  const saved = localStorage.getItem('calendarData');
+  if (saved) {
+    Object.assign(calendarData, JSON.parse(saved));
+  }
+}
+
+function changeDate(offset) {
+  const input = document.getElementById('calendarDate');
+  const current = new Date(input.value || new Date());
+  current.setDate(current.getDate() + offset);
+  input.value = current.toISOString().split('T')[0];
+  generateTimeSlots();
+}
+
+window.onload = () => {
+  const dateInput = document.getElementById('calendarDate');
+  if (!dateInput.value) dateInput.value = new Date().toISOString().split('T')[0];
+  loadAppointments();
+  generateTimeSlots();
+};
